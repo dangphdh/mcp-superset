@@ -108,6 +108,8 @@ class AuthManager:
         login_page = await client.get(login_url)
         login_page.raise_for_status()
 
+        # Superset login template renders csrf_token as a hidden input.
+        # We extract it directly to avoid adding an HTML parser dependency.
         match = re.search(r"name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]", login_page.text)
         if not match:
             raise ValueError("Unable to extract csrf_token from Superset login page")
@@ -122,6 +124,8 @@ class AuthManager:
         )
         resp.raise_for_status()
 
+        # RISON q is required by Superset list endpoints; this lightweight call
+        # confirms session-cookie auth is active for read requests.
         verify_session = await client.get(
             f"{self.base_url}/api/v1/dashboard/",
             params={"q": "(page:0,page_size:1)"},
