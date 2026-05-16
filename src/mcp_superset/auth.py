@@ -108,7 +108,7 @@ class AuthManager:
         login_page = await client.get(login_url)
         login_page.raise_for_status()
 
-        match = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', login_page.text)
+        match = re.search(r"name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]", login_page.text)
         if not match:
             raise ValueError("Unable to extract csrf_token from Superset login page")
 
@@ -122,7 +122,10 @@ class AuthManager:
         )
         resp.raise_for_status()
 
-        verify_session = await client.get(f"{self.base_url}/api/v1/dashboard/?q=(page:0,page_size:1)")
+        verify_session = await client.get(
+            f"{self.base_url}/api/v1/dashboard/",
+            params={"q": "(page:0,page_size:1)"},
+        )
         if verify_session.status_code in (401, 302):
             raise httpx.HTTPStatusError(
                 "Superset form login failed to establish session",
