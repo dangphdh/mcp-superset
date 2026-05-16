@@ -5,6 +5,10 @@ import time
 
 import httpx
 
+_CSRF_TOKEN_PATTERN = re.compile(
+    r"(?:name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]|value=['\"]([^'\"]+)['\"][^>]*name=['\"]csrf_token['\"])"
+)
+
 
 class AuthManager:
     """Manages authentication with Superset REST API.
@@ -113,10 +117,7 @@ class AuthManager:
         # Superset login template renders csrf_token as a hidden input.
         # We extract it directly to avoid adding an HTML parser dependency.
         # Supports both attribute orders: name->value and value->name.
-        match = re.search(
-            r"(?:name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]|value=['\"]([^'\"]+)['\"][^>]*name=['\"]csrf_token['\"])",
-            login_page.text,
-        )
+        match = _CSRF_TOKEN_PATTERN.search(login_page.text)
         if not match:
             raise ValueError("Unable to extract csrf_token from Superset login page")
         csrf_token = match.group(1) or match.group(2)
@@ -138,8 +139,10 @@ class AuthManager:
             params={"q": self._SESSION_VERIFY_Q},
         )
         if verify_session.status_code in (401, 302):
+            response_detail = verify_session.text[:200] if verify_session.text else ""
             raise httpx.HTTPStatusError(
-                f"Superset form login failed to establish session (status={verify_session.status_code})",
+                "Superset form login failed to establish session "
+                f"(status={verify_session.status_code}, detail={response_detail})",
                 request=verify_session.request,
                 response=verify_session,
             )
