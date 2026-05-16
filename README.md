@@ -74,7 +74,7 @@ A comprehensive [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 - **Tags, reports, annotations, saved queries** — full CRUD
 - **Asset export/import** — full instance backup and restore
 - **Built-in safety** — confirmation flags for destructive operations, DDL/DML blocking in SQL Lab
-- **JWT authentication** with automatic token refresh and CSRF handling
+- **Dual auth flow** — session-cookie auth for read requests, JWT + CSRF for mutating requests
 - **Streamable HTTP, SSE, and stdio transports**
 
 ## Quick Start
@@ -104,6 +104,7 @@ SUPERSET_PASSWORD=your_password
 
 # Optional
 SUPERSET_AUTH_PROVIDER=db          # db (default) or ldap
+SUPERSET_VERIFY_SSL=true           # set false for self-signed HTTPS certs
 SUPERSET_MCP_HOST=127.0.0.1       # Server host (default: 127.0.0.1)
 SUPERSET_MCP_PORT=8001             # Server port (default: 8001)
 SUPERSET_MCP_TRANSPORT=streamable-http  # streamable-http (default), sse, or stdio

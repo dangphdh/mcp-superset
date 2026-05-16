@@ -1,5 +1,6 @@
 """Authentication manager for Superset — JWT with CSRF and refresh."""
 
+import re
 import time
 
 import httpx
@@ -8,8 +9,9 @@ import httpx
 class AuthManager:
     """Manages authentication with Superset REST API.
 
-    Uses JWT authentication flow:
+    Uses dual authentication flow:
     - Login: POST /api/v1/security/login with refresh=true
+    - Session login: GET/POST /login/ (for read endpoints)
     - CSRF: GET /api/v1/security/csrf_token/ (required for POST/PUT/DELETE)
     - Refresh: POST /api/v1/security/refresh when access_token expires
     """
@@ -31,6 +33,7 @@ class AuthManager:
         self._refresh_token: str | None = None
         self._csrf_token: str | None = None
         self._token_expires_at: float = 0
+        self._session_authenticated = False
 
     async def get_token(self, client: httpx.AsyncClient) -> str:
         """Return a valid access_token, refreshing or re-logging in as needed.
@@ -69,6 +72,12 @@ class AuthManager:
         await self._fetch_csrf(client)
         return self._csrf_token
 
+    async def ensure_session(self, client: httpx.AsyncClient) -> None:
+        """Ensure Flask session auth is established for read requests."""
+        if self._session_authenticated:
+            return
+        await self._login_form(client)
+
     async def _login(self, client: httpx.AsyncClient) -> None:
         """Perform JWT login via POST /api/v1/security/login.
 
@@ -91,6 +100,37 @@ class AuthManager:
         self._token_expires_at = time.time() + 900
         # Reset CSRF — it is bound to the session/token
         self._csrf_token = None
+
+    async def _login_form(self, client: httpx.AsyncClient) -> None:
+        """Perform form-based login via /login/ to obtain session cookie."""
+        login_url = f"{self.base_url}/login/"
+
+        login_page = await client.get(login_url)
+        login_page.raise_for_status()
+
+        match = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', login_page.text)
+        if not match:
+            raise ValueError("Unable to extract csrf_token from Superset login page")
+
+        resp = await client.post(
+            login_url,
+            data={
+                "csrf_token": match.group(1),
+                "username": self.username,
+                "password": self.password,
+            },
+        )
+        resp.raise_for_status()
+
+        verify_session = await client.get(f"{self.base_url}/api/v1/dashboard/?q=(page:0,page_size:1)")
+        if verify_session.status_code in (401, 302):
+            raise httpx.HTTPStatusError(
+                "Superset form login failed to establish session",
+                request=verify_session.request,
+                response=verify_session,
+            )
+
+        self._session_authenticated = True
 
     async def _refresh(self, client: httpx.AsyncClient) -> bool:
         """Attempt to refresh the JWT using the refresh token.
@@ -137,3 +177,4 @@ class AuthManager:
         self._refresh_token = None
         self._csrf_token = None
         self._token_expires_at = 0
+        self._session_authenticated = False

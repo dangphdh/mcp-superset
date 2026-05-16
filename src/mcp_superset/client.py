@@ -14,16 +14,17 @@ class SupersetClient:
     and provides convenient CRUD methods.
     """
 
-    def __init__(self, auth_manager: AuthManager, base_url: str):
+    def __init__(self, auth_manager: AuthManager, base_url: str, verify_ssl: bool = True):
         self.auth = auth_manager
         self.base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(60.0, connect=10.0),
             follow_redirects=True,
+            verify=verify_ssl,
         )
 
     async def _get_headers(self, need_csrf: bool = False) -> dict[str, str]:
-        """Build request headers with a valid JWT and optionally a CSRF token.
+        """Build request headers for session-auth reads or JWT-auth writes.
 
         Args:
             need_csrf: True for mutating requests (POST/PUT/DELETE).
@@ -31,16 +32,15 @@ class SupersetClient:
         Returns:
             Dictionary of HTTP headers.
         """
-        token = await self.auth.get_token(self._client)
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Referer": self.base_url,
-        }
+        headers = {"Accept": "application/json", "Referer": self.base_url}
         if need_csrf:
+            token = await self.auth.get_token(self._client)
+            headers["Authorization"] = f"Bearer {token}"
+            headers["Content-Type"] = "application/json"
             csrf = await self.auth.get_csrf_token(self._client)
             headers["X-CSRFToken"] = csrf
+        else:
+            await self.auth.ensure_session(self._client)
         return headers
 
     async def _request(

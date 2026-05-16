@@ -26,6 +26,7 @@ SUPERSET_BASE_URL = os.getenv("SUPERSET_BASE_URL", "")
 SUPERSET_USERNAME = os.getenv("SUPERSET_USERNAME")
 SUPERSET_PASSWORD = os.getenv("SUPERSET_PASSWORD")
 SUPERSET_AUTH_PROVIDER = os.getenv("SUPERSET_AUTH_PROVIDER", "db")
+SUPERSET_VERIFY_SSL = os.getenv("SUPERSET_VERIFY_SSL", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 if not SUPERSET_BASE_URL:
     raise ValueError("SUPERSET_BASE_URL is required. Set it in .env or environment variables.")
@@ -40,7 +41,11 @@ auth_manager = AuthManager(
     provider=SUPERSET_AUTH_PROVIDER,
 )
 
-superset_client = SupersetClient(auth_manager=auth_manager, base_url=SUPERSET_BASE_URL)
+superset_client = SupersetClient(
+    auth_manager=auth_manager,
+    base_url=SUPERSET_BASE_URL,
+    verify_ssl=SUPERSET_VERIFY_SSL,
+)
 
 # Create MCP server
 mcp = FastMCP(
