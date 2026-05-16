@@ -16,6 +16,8 @@ class AuthManager:
     - Refresh: POST /api/v1/security/refresh when access_token expires
     """
 
+    _SESSION_VERIFY_Q = "(page:0,page_size:1)"
+
     def __init__(
         self,
         base_url: str,
@@ -110,14 +112,19 @@ class AuthManager:
 
         # Superset login template renders csrf_token as a hidden input.
         # We extract it directly to avoid adding an HTML parser dependency.
-        match = re.search(r"name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]", login_page.text)
+        # Supports both attribute orders: name->value and value->name.
+        match = re.search(
+            r"(?:name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]|value=['\"]([^'\"]+)['\"][^>]*name=['\"]csrf_token['\"])",
+            login_page.text,
+        )
         if not match:
             raise ValueError("Unable to extract csrf_token from Superset login page")
+        csrf_token = match.group(1) or match.group(2)
 
         resp = await client.post(
             login_url,
             data={
-                "csrf_token": match.group(1),
+                "csrf_token": csrf_token,
                 "username": self.username,
                 "password": self.password,
             },
@@ -128,11 +135,11 @@ class AuthManager:
         # confirms session-cookie auth is active for read requests.
         verify_session = await client.get(
             f"{self.base_url}/api/v1/dashboard/",
-            params={"q": "(page:0,page_size:1)"},
+            params={"q": self._SESSION_VERIFY_Q},
         )
         if verify_session.status_code in (401, 302):
             raise httpx.HTTPStatusError(
-                "Superset form login failed to establish session",
+                f"Superset form login failed to establish session (status={verify_session.status_code})",
                 request=verify_session.request,
                 response=verify_session,
             )
