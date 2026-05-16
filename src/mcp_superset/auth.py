@@ -8,6 +8,7 @@ import httpx
 _CSRF_TOKEN_PATTERN = re.compile(
     r"(?:name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]|value=['\"]([^'\"]+)['\"][^>]*name=['\"]csrf_token['\"])"
 )
+_SESSION_ERROR_DETAIL_MAX_LEN = 200
 
 
 class AuthManager:
@@ -19,8 +20,6 @@ class AuthManager:
     - CSRF: GET /api/v1/security/csrf_token/ (required for POST/PUT/DELETE)
     - Refresh: POST /api/v1/security/refresh when access_token expires
     """
-
-    _SESSION_VERIFY_Q = "(page:0,page_size:1)"
 
     def __init__(
         self,
@@ -116,6 +115,7 @@ class AuthManager:
 
         # Superset login template renders csrf_token as a hidden input.
         # We extract it directly to avoid adding an HTML parser dependency.
+        # Trade-off: regex parsing can break if Superset login HTML changes.
         # Supports both attribute orders: name->value and value->name.
         match = _CSRF_TOKEN_PATTERN.search(login_page.text)
         if not match:
@@ -132,14 +132,10 @@ class AuthManager:
         )
         resp.raise_for_status()
 
-        # RISON q is required by Superset list endpoints; this lightweight call
-        # confirms session-cookie auth is active for read requests.
-        verify_session = await client.get(
-            f"{self.base_url}/api/v1/dashboard/",
-            params={"q": self._SESSION_VERIFY_Q},
-        )
+        # Verify the new session using a stable auth-protected endpoint.
+        verify_session = await client.get(f"{self.base_url}/api/v1/me/")
         if verify_session.status_code in (401, 302):
-            response_detail = verify_session.text[:200] if verify_session.text else ""
+            response_detail = verify_session.text[:_SESSION_ERROR_DETAIL_MAX_LEN] if verify_session.text else ""
             raise httpx.HTTPStatusError(
                 "Superset form login failed to establish session "
                 f"(status={verify_session.status_code}, detail={response_detail})",
