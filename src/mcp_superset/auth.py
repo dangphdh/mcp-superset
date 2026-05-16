@@ -120,8 +120,7 @@ class AuthManager:
         # Supports both attribute orders: name->value and value->name.
         match = _CSRF_TOKEN_PATTERN.search(login_page.text)
         if not match:
-            snippet = login_page.text[:_SESSION_ERROR_DETAIL_MAX_LEN].replace("\n", " ")
-            raise ValueError(f"Unable to extract csrf_token from Superset login page (html={snippet})")
+            raise ValueError("Unable to extract csrf_token from Superset login page")
         csrf_token = match.group(1) or match.group(2)
 
         resp = await client.post(
