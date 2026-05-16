@@ -12,6 +12,13 @@ _CSRF_TOKEN_PATTERN = re.compile(
 _SESSION_ERROR_DETAIL_MAX_LEN = 200
 
 
+def _truncate_detail(value: str, max_len: int) -> str:
+    """Truncate diagnostic text and mark truncation explicitly."""
+    if len(value) <= max_len:
+        return value
+    return f"{value[:max_len]}..."
+
+
 class AuthManager:
     """Manages authentication with Superset REST API.
 
@@ -117,6 +124,7 @@ class AuthManager:
         # Superset login template renders csrf_token as a hidden input.
         # We extract it directly to avoid adding an HTML parser dependency.
         # Trade-off: regex parsing can break if Superset login HTML changes.
+        # If this fails in production, check auth logs and update the regex.
         # Supports both attribute orders: name->value and value->name.
         match = _CSRF_TOKEN_PATTERN.search(login_page.text)
         if not match:
@@ -136,7 +144,9 @@ class AuthManager:
         # Verify the new session using a stable auth-protected endpoint.
         verify_session = await client.get(f"{self.base_url}/api/v1/me/")
         if verify_session.status_code in (httpx.codes.UNAUTHORIZED, httpx.codes.FOUND):
-            response_detail = verify_session.text[:_SESSION_ERROR_DETAIL_MAX_LEN] if verify_session.text else ""
+            response_detail = (
+                _truncate_detail(verify_session.text, _SESSION_ERROR_DETAIL_MAX_LEN) if verify_session.text else ""
+            )
             raise httpx.HTTPStatusError(
                 "Superset form login failed to establish session "
                 f"(status={verify_session.status_code}, detail={response_detail})",
