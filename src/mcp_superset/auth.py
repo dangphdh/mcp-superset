@@ -8,6 +8,7 @@ import httpx
 _CSRF_TOKEN_PATTERN = re.compile(
     r"(?:name=['\"]csrf_token['\"][^>]*value=['\"]([^'\"]+)['\"]|value=['\"]([^'\"]+)['\"][^>]*name=['\"]csrf_token['\"])"
 )
+# Max response snippet length included in session-login error messages.
 _SESSION_ERROR_DETAIL_MAX_LEN = 200
 
 
@@ -119,7 +120,8 @@ class AuthManager:
         # Supports both attribute orders: name->value and value->name.
         match = _CSRF_TOKEN_PATTERN.search(login_page.text)
         if not match:
-            raise ValueError("Unable to extract csrf_token from Superset login page")
+            snippet = login_page.text[:_SESSION_ERROR_DETAIL_MAX_LEN].replace("\n", " ")
+            raise ValueError(f"Unable to extract csrf_token from Superset login page (html={snippet})")
         csrf_token = match.group(1) or match.group(2)
 
         resp = await client.post(
@@ -134,7 +136,7 @@ class AuthManager:
 
         # Verify the new session using a stable auth-protected endpoint.
         verify_session = await client.get(f"{self.base_url}/api/v1/me/")
-        if verify_session.status_code in (401, 302):
+        if verify_session.status_code in (httpx.codes.UNAUTHORIZED, httpx.codes.FOUND):
             response_detail = verify_session.text[:_SESSION_ERROR_DETAIL_MAX_LEN] if verify_session.text else ""
             raise httpx.HTTPStatusError(
                 "Superset form login failed to establish session "
